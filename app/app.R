@@ -1,261 +1,261 @@
 # ==============================================================================
-# STUDENT RISK ANALYTICS - PREMIUM SMART UI
+# EDUCATION PERFORMANCE ANALYTICS (Interactive Navigation)
 # ==============================================================================
 
 library(shiny)
 library(bslib)
 library(ggplot2)
 library(dplyr)
-library(tidyr)
 library(DT)
-library(readxl)
-library(shinyWidgets)
-library(rmarkdown) # For PDF generation
+library(reticulate)
+library(shinyjs)
 
-# --- 1. DEFAULT DATA ---
+# --- 1. PYTHON MACHINE LEARNING ENGINE ---
+py_code <- "
+import pandas as pd
+from sklearn.linear_model import LogisticRegression
+
+def train_risk_model(df):
+    X = df[['attendance', 'quiz_score', 'midterm_score', 'final_score']]
+    y = ((X['attendance'] < 70) | ((X['quiz_score']*0.2 + X['midterm_score']*0.3 + X['final_score']*0.5) < 60)).astype(int)
+    model = LogisticRegression(class_weight='balanced')
+    model.fit(X, y)
+    return model.predict_proba(X)[:, 1]
+"
+use_python(Sys.which("python"), required = TRUE)
+py_run_string(py_code)
+
+# --- 2. DATA GENERATION ---
 set.seed(42)
 default_data <- data.frame(
   student_id    = sprintf("STU-%03d", 1:100),
-  quiz_score    = round(runif(100, min = 40, max = 100), 1),
-  midterm_score = round(runif(100, min = 35, max = 100), 1),
-  final_score   = round(runif(100, min = 30, max = 100), 1),
-  math          = round(runif(100, min = 30, max = 100), 1),
-  science       = round(runif(100, min = 30, max = 100), 1),
-  english       = round(runif(100, min = 30, max = 100), 1),
-  attendance    = round(runif(100, min = 50, max = 100), 1)
+  quiz_score    = round(runif(100, 40, 100), 1),
+  midterm_score = round(runif(100, 35, 100), 1),
+  final_score   = round(runif(100, 30, 100), 1),
+  attendance    = round(runif(100, 50, 100), 1),
+  grade         = sample(c("A", "B", "C", "D", "F"), 100, replace = TRUE, prob = c(0.2, 0.3, 0.3, 0.1, 0.1)),
+  subject       = sample(c("Math", "Science", "English"), 100, replace = TRUE)
 )
 
-process_data <- function(df) {
-  df %>%
-    mutate(
-      overall_score = (quiz_score * 0.20) + (midterm_score * 0.30) + (final_score * 0.50),
-      risk_level = case_when(
-        overall_score < 60 | attendance < 70 ~ "High Risk",
-        overall_score < 75 ~ "Moderate Risk",
-        TRUE ~ "Low Risk"
+# --- 3. THE UI ---
+ui <- fluidPage(
+  useShinyjs(), # Essential for the tab switching
+  theme = bs_theme(version = 5, bg = "#f8fafc", fg = "#0f172a", base_font = font_google("Inter")),
+  
+  tags$head(
+    tags$style(HTML("
+      body { overflow-x: hidden; background-color: #f8fafc; }
+      .row { margin: 0; }
+      
+      /* DARK SIDEBAR */
+      .custom-sidebar {
+        background-color: #1a1f2e;
+        color: white;
+        height: 100vh;
+        padding: 30px 20px;
+        position: fixed;
+        width: 260px;
+        top: 0; left: 0;
+        z-index: 1000;
+      }
+      .sidebar-logo { font-size: 1.5rem; font-weight: 800; color: white; margin-bottom: 50px; display: flex; align-items: center; gap: 10px;}
+      
+      /* CLICKABLE MENU ITEMS */
+      .sidebar-menu-item {
+        color: #94a3b8; font-size: 1rem; padding: 12px 15px; border-radius: 8px; margin-bottom: 10px; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 10px;
+      }
+      .sidebar-menu-item:hover { background-color: #2a3245; color: white; }
+      .sidebar-menu-item.active { background-color: #2a3245; color: white; font-weight: 600; border-left: 4px solid #3b82f6; }
+      
+      /* MAIN CONTENT AREA */
+      .main-content { margin-left: 260px; padding: 30px 40px; }
+      
+      /* TOP HEADER */
+      .top-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+      .page-title { font-size: 1.8rem; font-weight: 800; margin: 0; color: #1e293b; }
+      .page-subtitle { color: #64748b; font-size: 0.9rem; margin-top: 5px; }
+      .filter-group { display: flex; gap: 15px; align-items: center; }
+      
+      /* WHITE CARDS */
+      .ui-card { 
+        background: white; border-radius: 16px; padding: 24px; 
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02); border: 1px solid #f1f5f9;
+        margin-bottom: 24px; height: calc(100% - 24px); 
+      }
+      .kpi-title { font-size: 0.85rem; color: #64748b; font-weight: 600; margin-bottom: 10px;}
+      .kpi-value { font-size: 2rem; font-weight: 800; color: #0f172a; line-height: 1;}
+      
+      /* TABLE OVERRIDES */
+      table.dataTable thead th { border-bottom: none !important; color: #64748b; font-weight: 600; }
+      table.dataTable tbody tr { border-bottom: 1px solid #f1f5f9; }
+    "))
+  ),
+  
+  # --- SIDEBAR HTML (With Shiny Inputs) ---
+  div(class = "custom-sidebar",
+      div(class = "sidebar-logo", icon("chart-line"), "EduAnalytics"),
+      
+      # Using actionLinks for navigation
+      actionLink("nav_summary", div(class = "sidebar-menu-item active", id = "menu_summary", icon("home"), " Summary")),
+      actionLink("nav_insights", div(class = "sidebar-menu-item", id = "menu_insights", icon("chart-pie"), " Insights")),
+      actionLink("nav_students", div(class = "sidebar-menu-item", id = "menu_students", icon("users"), " Students"))
+  ),
+  
+  # --- MAIN CONTENT HTML ---
+  div(class = "main-content",
+      
+      # Persistent Header & Filters
+      div(class = "top-header",
+          div(
+            h1(textOutput("current_page_title"), class = "page-title"),
+            p("Academic Performance | High-Impact Student Analytics", class = "page-subtitle")
+          ),
+          div(class = "filter-group",
+              selectInput("file1", NULL, choices = c("Default Data"), width = "200px"),
+              actionButton("update_btn", "Apply Filters", class = "btn btn-dark", style = "border-radius: 8px; font-weight: 600; height: 42px;")
+          )
       ),
-      risk_level = factor(risk_level, levels = c("Low Risk", "Moderate Risk", "High Risk"))
-    )
-}
-default_data <- process_data(default_data)
-
-# --- 2. CUSTOM CSS FOR PREMIUM FEEL ---
-custom_css <- "
-  /* Smooth transitions for everything */
-  * { transition: all 0.3s ease-in-out; }
-  
-  /* Make buttons look clickable and premium */
-  .btn { border-radius: 8px; font-weight: 600; letter-spacing: 0.5px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-  .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); }
-  
-  /* Premium Card Styling */
-  .card { border-radius: 12px; border: none; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
-  .card-header { border-radius: 12px 12px 0 0 !important; font-weight: 600; text-transform: uppercase; font-size: 0.85rem; letter-spacing: 1px; }
-  
-  /* Value Box Styling */
-  .bslib-value-box { border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); }
-  .bslib-value-box .value-box-title { font-weight: 500; font-size: 1rem; opacity: 0.9; }
-  .bslib-value-box .value-box-value { font-weight: 800; font-size: 2.5rem; }
-  
-  /* Sidebar Background */
-  .sidebar { background-color: #1e293b !important; color: #f8fafc !important; }
-  .sidebar .card { background-color: #334155; color: #f8fafc; border: 1px solid #475569; }
-  .sidebar .card-header { background-color: #0f172a; color: #f8fafc; }
-  .sidebar label, .sidebar h5, .sidebar .help-block { color: #cbd5e1 !important; }
-"
-
-# --- 3. UI DESIGN ---
-ui <- page_sidebar(
-  theme = bs_theme(
-    version = 5, 
-    bootswatch = "flatly", 
-    primary = "#10b981",  # Emerald Green
-    secondary = "#475569", # Slate Gray
-    danger = "#ef4444",    # Soft Red
-    base_font = font_google("Inter"),
-    heading_font = font_google("Poppins")
-  ),
-  
-  tags$head(tags$style(HTML(custom_css))),
-  
-  title = tags$div(
-    style = "display: flex; align-items: center; justify-content: space-between; width: 100%;",
-    tags$div(
-      tags$i(class = "fa fa-chart-pie", style = "color: #10b981; margin-right: 10px;"),
-      "Student Risk Analytics",
-      style = "font-weight: 800; font-family: 'Poppins'; color: #0f172a;"
-    ),
-    # Smart Light/Dark Mode Toggle
-    input_dark_mode(id = "dark_mode", mode = "light")
-  ),
-  
-  # Sidebar
-  sidebar = sidebar(
-    width = 320,
-    bg = "#1e293b",
-    
-    # 1. Upload Card
-    card(
-      card_header("📁 Data Source", class = "bg-dark text-white"),
-      fileInput("file1", NULL, buttonLabel = "Browse Files", placeholder = "No file selected",
-                accept = c(".csv", ".xlsx", ".xls")),
-      helpText("Default: 100 simulated students.")
-    ),
-    
-    # 2. Filters Card
-    card(
-      card_header("🎯 Risk Filters", class = "bg-dark text-white"),
-      sliderInput("attendance_filter", "Min Attendance (%)", 
-                  min = 0, max = 100, value = 50, step = 5),
-      prettyCheckboxGroup(
-        inputId = "risk_filter",
-        label = NULL,
-        choices = c("Low Risk", "Moderate Risk", "High Risk"),
-        selected = c("Low Risk", "Moderate Risk", "High Risk"),
-        status = "success",
-        shape = "round",
-        animation = "smooth"
+      
+      # ---------------------------------------------------------
+      # PAGE 1: SUMMARY (Visible by default)
+      # ---------------------------------------------------------
+      div(id = "page_summary",
+          # KPI Row
+          fluidRow(
+            column(3, div(class = "ui-card", div(class = "kpi-title", "Average Score"), div(class = "kpi-value", textOutput("avg_score")))),
+            column(3, div(class = "ui-card", div(class = "kpi-title", "Total Students"), div(class = "kpi-value", textOutput("total_students")))),
+            column(3, div(class = "ui-card", div(class = "kpi-title", "Pass Rate"), div(class = "kpi-value", textOutput("pass_rate")))),
+            column(3, div(class = "ui-card", div(class = "kpi-title", "High Risk Prob."), div(class = "kpi-value", textOutput("ai_risk_prob"), style = "color: #ef4444;")))
+          ),
+          # Charts Row
+          fluidRow(
+            column(4, div(class = "ui-card", h4("Grade Distribution", style="font-weight:700; font-size:1rem; margin-bottom:20px;"),
+                          plotOutput("grade_plot", height = "250px"))),
+            column(8, div(class = "ui-card", h4("Performance Trend", style="font-weight:700; font-size:1rem; margin-bottom:20px;"),
+                          plotOutput("trend_plot", height = "250px")))
+          )
+      ),
+      
+      # ---------------------------------------------------------
+      # PAGE 2: INSIGHTS (Hidden by default)
+      # ---------------------------------------------------------
+      hidden(
+        div(id = "page_insights",
+            fluidRow(
+              column(12, div(class = "ui-card", 
+                             h4("Risk Profile Breakdown", style="font-weight:700; font-size:1rem; margin-bottom:20px;"),
+                             plotOutput("scatter_plot", height = "400px")))
+            )
+        )
+      ),
+      
+      # ---------------------------------------------------------
+      # PAGE 3: STUDENTS (Hidden by default)
+      # ---------------------------------------------------------
+      hidden(
+        div(id = "page_students",
+            fluidRow(
+              column(12, div(class = "ui-card", 
+                             h4("Student Directory", style="font-weight:700; font-size:1rem; margin-bottom:20px;"),
+                             DTOutput("full_student_table")
+              ))
+            )
+        )
       )
-    ),
-    
-    # 3. Action Button (PDF)
-    div(
-      style = "margin-top: 20px;",
-      downloadButton("download_pdf", "📄 Download PDF Report", 
-                     class = "btn-success w-100", 
-                     style = "padding: 12px; font-size: 1.1rem;")
-    )
-  ),
-  
-  # Main Body
-  layout_column_wrap(
-    width = 1/3,
-    value_box(
-      title = "STUDENTS FILTERED",
-      value = textOutput("total_students"),
-      showcase = icon("users"),
-      theme = "secondary" # Slate Gray
-    ),
-    value_box(
-      title = "AVERAGE SCORE",
-      value = textOutput("avg_score"),
-      showcase = icon("graduation-cap"),
-      theme = "primary" # Emerald
-    ),
-    value_box(
-      title = "HIGH RISK STUDENTS",
-      value = textOutput("high_risk_count"),
-      showcase = icon("triangle-exclamation"),
-      theme = "danger" # Soft Red
-    )
-  ),
-  
-  navset_card_tab(
-    nav_panel("📊 Visual Overview", 
-              card(
-                card_header("Performance vs Attendance Scatter Plot", class = "bg-secondary text-white"),
-                plotOutput("scatter_plot", height = "500px")
-              )
-    ),
-    nav_panel("⚠️ Intervention List", 
-              card(
-                card_header("Actionable Interventions", class = "bg-danger text-white"),
-                DTOutput("data_table")
-              )
-    )
   )
 )
 
 # --- 4. SERVER LOGIC ---
 server <- function(input, output, session) {
   
-  dataset <- reactive({
-    if (is.null(input$file1)) { return(default_data) } 
-    else {
-      ext <- tools::file_ext(input$file1$name)
-      df <- switch(ext,
-                   csv = read.csv(input$file1$datapath),
-                   xlsx = readxl::read_excel(input$file1$datapath),
-                   xls = readxl::read_excel(input$file1$datapath),
-                   validate("Invalid file type.")
-      )
-      process_data(df)
-    }
+  # --- NAVIGATION LOGIC ---
+  output$current_page_title <- renderText({
+    if (input$nav_summary > 0) "Education Performance Analysis"
+    else if (input$nav_insights > 0) "Deep Dive Insights"
+    else if (input$nav_students > 0) "Student Directory"
+    else "Education Performance Analysis"
   })
   
-  filtered_data <- reactive({
-    req(dataset())
-    dataset() %>%
-      filter(attendance >= input$attendance_filter) %>%
-      filter(risk_level %in% input$risk_filter)
+  # Toggle Page Visibility & Active Menu State
+  observeEvent(input$nav_summary, {
+    show("page_summary"); hide("page_insights"); hide("page_students")
+    addClass("menu_summary", "active"); removeClass("menu_insights", "active"); removeClass("menu_students", "active")
+  })
+  observeEvent(input$nav_insights, {
+    hide("page_summary"); show("page_insights"); hide("page_students")
+    removeClass("menu_summary", "active"); addClass("menu_insights", "active"); removeClass("menu_students", "active")
+  })
+  observeEvent(input$nav_students, {
+    hide("page_summary"); hide("page_insights"); show("page_students")
+    removeClass("menu_summary", "active"); removeClass("menu_insights", "active"); addClass("menu_students", "active")
   })
   
+  # --- DATA PROCESSING ---
+  processed_data <- reactive({
+    df <- default_data 
+    py_df <- r_to_py(df)
+    probs <- py$train_risk_model(py_df)
+    df$ai_risk_prob <- as.numeric(probs)
+    df$overall_score <- (df$quiz_score * 0.2) + (df$midterm_score * 0.3) + (df$final_score * 0.5)
+    df$risk_level <- ifelse(df$ai_risk_prob > 0.6, "High Risk", ifelse(df$ai_risk_prob > 0.3, "Moderate Risk", "Low Risk"))
+    df
+  })
+  
+  filtered_data <- eventReactive(input$update_btn, {
+    processed_data() 
+  }, ignoreNULL = FALSE)
+  
+  # --- SUMMARY PAGE OUTPUTS ---
   output$total_students <- renderText({ nrow(filtered_data()) })
-  output$avg_score <- renderText({ paste0(round(mean(filtered_data()$overall_score, na.rm = TRUE), 1), "%") })
-  output$high_risk_count <- renderText({ sum(filtered_data()$risk_level == "High Risk") })
+  output$avg_score <- renderText({ paste0(round(mean(filtered_data()$overall_score), 2), "%") })
+  output$pass_rate <- renderText({ 
+    paste0(round((sum(filtered_data()$overall_score >= 60) / nrow(filtered_data())) * 100, 1), "%") 
+  })
+  output$ai_risk_prob <- renderText({ paste0(round(mean(filtered_data()$ai_risk_prob) * 100, 1), "%") })
   
+  output$grade_plot <- renderPlot({
+    # Doughnut Chart
+    grade_counts <- filtered_data() %>% 
+      mutate(calc_grade = case_when(overall_score >= 90 ~ "A", overall_score >= 80 ~ "B", overall_score >= 70 ~ "C", overall_score >= 60 ~ "D", TRUE ~ "F")) %>%
+      count(calc_grade)
+    
+    ggplot(grade_counts, aes(x = 2, y = n, fill = calc_grade)) +
+      geom_bar(stat = "identity", width = 1, color = "white") +
+      coord_polar("y", start = 0) + xlim(0.5, 2.5) + 
+      scale_fill_manual(values = c("A" = "#10b981", "B" = "#3b82f6", "C" = "#f59e0b", "D" = "#f97316", "F" = "#ef4444")) +
+      theme_void() + theme(legend.position = "right", legend.title = element_blank())
+  }, bg = "transparent")
+  
+  output$trend_plot <- renderPlot({
+    trend_data <- data.frame(
+      Term = c("Term 1", "Term 2", "Term 3", "Term 4"),
+      Score = c(mean(filtered_data()$overall_score) - 5, mean(filtered_data()$overall_score) - 2, mean(filtered_data()$overall_score) + 1, mean(filtered_data()$overall_score))
+    )
+    ggplot(trend_data, aes(x = Term, y = Score)) +
+      geom_col(fill = "#1e293b", width = 0.4) +
+      geom_text(aes(label = round(Score, 1)), vjust = -0.5, fontface = "bold", color = "#1e293b") +
+      scale_y_continuous(limits = c(0, 100)) +
+      theme_minimal() + theme(panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(), axis.title = element_blank())
+  }, bg = "transparent")
+  
+  # --- INSIGHTS PAGE OUTPUTS ---
   output$scatter_plot <- renderPlot({
-    # Using theme_minimal with customized text colors to match the UI
     ggplot(filtered_data(), aes(x = attendance, y = overall_score, color = risk_level)) +
       geom_point(size = 4, alpha = 0.8) +
-      geom_hline(yintercept = 60, linetype = "dashed", color = "#ef4444", alpha = 0.5) +
-      geom_vline(xintercept = 70, linetype = "dashed", color = "#f59e0b", alpha = 0.5) +
       scale_color_manual(values = c("Low Risk" = "#10b981", "Moderate Risk" = "#f59e0b", "High Risk" = "#ef4444")) +
       labs(x = "Attendance Rate (%)", y = "Overall Weighted Score (%)", color = "Risk Level") +
-      theme_minimal(base_size = 15, base_family = "Inter") +
-      theme(
-        legend.position = "bottom",
-        plot.background = element_rect(fill = "transparent", color = NA),
-        panel.grid.major = element_line(color = "#e2e8f0")
-      )
+      theme_minimal(base_size = 14) +
+      theme(legend.position = "bottom", panel.grid.minor = element_blank())
+  }, bg = "transparent")
+  
+  # --- STUDENTS PAGE OUTPUTS ---
+  output$full_student_table <- renderDT({
+    datatable(filtered_data() %>% select(student_id, overall_score, attendance, risk_level, ai_risk_prob), 
+              rownames = FALSE, 
+              options = list(pageLength = 10)) %>%
+      formatPercentage("ai_risk_prob", 1) %>%
+      formatRound("overall_score", 1)
   })
-  
-  output$data_table <- renderDT({
-    filtered_data() %>%
-      filter(risk_level != "Low Risk") %>%
-      mutate(
-        Action_Required = case_when(
-          risk_level == "High Risk" & attendance < 60 ~ "🚨 URGENT: Parent Meeting",
-          risk_level == "High Risk" & overall_score < 60 ~ "⚠️ URGENT: Tutoring Required",
-          risk_level == "High Risk" ~ "High Priority: Counselor Review",
-          risk_level == "Moderate Risk" & attendance < 70 ~ "Monitoring: Attendance Warning",
-          TRUE ~ "Monitoring: Extra Assignments"
-        )
-      ) %>%
-      select(student_id, risk_level, overall_score, attendance, Action_Required) %>%
-      arrange(desc(risk_level), overall_score)
-  }, 
-  options = list(pageLength = 10, dom = 't', scrollX = TRUE),
-  class = "display compact stripe hover"
-  )
-  
-  # --- PDF DOWNLOAD LOGIC ---
-  output$download_pdf <- downloadHandler(
-    filename = function() { 
-      paste0("Risk_Report_", Sys.Date(), ".pdf") 
-    },
-    content = function(file) {
-      # 1. Define the template file and output file
-      template_path <- "report_template.Rmd"
-      
-      # 2. Make sure the file exists before trying to render
-      req(file.exists(template_path))
-      
-      # 3. Pass the data to the Rmd file and render it
-      # We use a tryCatch block so if it fails, we see the error in the console
-      tryCatch({
-        rmarkdown::render(
-          input = template_path,
-          output_file = file,
-          params = list(data = filtered_data(), date = Sys.Date()),
-          envir = new.env(parent = globalenv())
-        )
-      }, error = function(e) {
-        cat("ERROR GENERATING PDF: ", e$message, "\n")
-        stop("PDF generation failed. Check the R console for details.")
-      })
-    }
-  )
 }
 
-shinyApp(ui = ui, server = server)
+shinyApp(ui, server)
