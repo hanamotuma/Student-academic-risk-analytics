@@ -9,10 +9,11 @@ library(dplyr)
 library(DT)
 library(reticulate)
 library(shinyjs)
+library(here)
 
 # --- 1. LOAD EXTERNAL PYTHON ---
-use_python(Sys.which("python"), required = TRUE)
-source_python("ml_engine.py") # Loads train_risk_model() from Python
+Sys.setenv(RETICULATE_PYTHON = "")
+source_python(here("ml_engine.py"))
 
 # --- 2. DATA GENERATION ---
 set.seed(42)
