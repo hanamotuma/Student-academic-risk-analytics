@@ -2,3 +2,11 @@
 .Rhistory
 .RData
 .Ruserdata
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+reports/*
+!reports/.gitkeep
+*.png
+!www/logo.png
