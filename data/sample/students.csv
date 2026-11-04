@@ -1,0 +1,16 @@
+student_id,name,subject,quiz,midterm,final,attendance
+S001,Alice,Math,85,78,88,92
+S002,Bob,Math,60,55,58,75
+S003,Charlie,Math,45,40,42,60
+S004,Diana,Math,90,92,95,98
+S005,Eve,Math,70,68,72,80
+S006,Frank,Science,55,50,52,65
+S007,Grace,Science,88,85,90,95
+S008,Henry,Science,40,35,38,55
+S009,Ivy,Science,75,78,80,85
+S010,Jack,Science,65,62,68,70
+S011,Karen,English,92,90,94,96
+S012,Leo,English,58,55,60,68
+S013,Mia,English,80,82,85,88
+S014,Nina,English,48,45,50,62
+S015,Oscar,English,72,70,75,78
