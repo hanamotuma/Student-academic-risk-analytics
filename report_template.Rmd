@@ -6,6 +6,7 @@ output:
   pdf_document:
     toc: false
     highlight: tango
+    latex_engine: xelatex # Needed for emojis if they slip through
 params:
   data: !expr NULL
 ---
@@ -16,5 +17,5 @@ library(ggplot2)
 library(dplyr)
 library(knitr)
 
-# Extract data
 df <- params$data
+if (is.null(df)) stop("Data must be provided to generate the report.")
